@@ -11,12 +11,6 @@ DATA_CUTOFF = datetime(2018, 9, 1)
 
 kpi_bp = Blueprint("kpi", __name__)
 
-# $dateTrunc existe depuis MongoDB 5.0, mais son unite "week" demarre par
-# defaut le DIMANCHE, alors que le DATE_TRUNC('week', ...) de Postgres suit
-# la norme ISO 8601 (semaine qui commence le LUNDI). Pour reproduire
-# exactement le meme decoupage qu'avant (et rester compatible avec des
-# clusters plus anciens), on reconstruit la date nous-memes a partir de
-# l'annee/mois ou de l'annee-ISO/semaine-ISO plutot que d'utiliser $dateTrunc.
 MONTH_TRUNC = {"$dateFromParts": {
     "year": {"$year": "$order_purchase_timestamp"},
     "month": {"$month": "$order_purchase_timestamp"},
@@ -25,7 +19,7 @@ MONTH_TRUNC = {"$dateFromParts": {
 WEEK_TRUNC = {"$dateFromParts": {
     "isoWeekYear": {"$isoWeekYear": "$order_purchase_timestamp"},
     "isoWeek": {"$isoWeek": "$order_purchase_timestamp"},
-    "isoDayOfWeek": 1,  # 1 = lundi, comme l'ISO 8601 utilise par Postgres
+    "isoDayOfWeek": 1,  
 }}
 
 
@@ -197,9 +191,7 @@ def get_risk_orders():
     match = _build_match(region, date_str)
     match["is_late"] = 1
 
-    # Mongo trie les valeurs manquantes/null comme "plus petites" que
-    # n'importe quel nombre : en ordre descendant, elles se retrouvent donc
-    # deja naturellement en fin de liste, comme NULLS LAST en SQL.
+
     cursor = (
         db.fact_orders.find(match, {
             "_id": 0, "order_id": 1, "customer_state": 1, "main_category": 1,
