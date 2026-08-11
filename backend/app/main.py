@@ -17,8 +17,7 @@ def create_app():
         "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173",
     ]}})
 
-    # Memes prefixes que les anciens app.include_router(..., prefix=...)
-    # de FastAPI, pour que le frontend (services/api.js) n'ait rien a changer.
+    
     app.register_blueprint(kpi_bp, url_prefix="/api/dashboard")
     app.register_blueprint(ml_bp, url_prefix="/api/ml")
     app.register_blueprint(chat_bp, url_prefix="/api/chat")
