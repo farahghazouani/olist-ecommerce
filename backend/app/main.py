@@ -19,11 +19,13 @@ def create_app():
 
     
     app.register_blueprint(kpi_bp, url_prefix="/api/dashboard")
-    app.register_blueprint(ml_bp, url_prefix="/api/ml")
-    app.register_blueprint(chat_bp, url_prefix="/api/chat")
     app.register_blueprint(products_bp, url_prefix="/api/products")
     app.register_blueprint(customers_bp, url_prefix="/api/customers")
     app.register_blueprint(sales_bp, url_prefix="/api/sales")
+
+    #pour lesmodules ml a inclure par la suite desqu'ils seront prets 
+    app.register_blueprint(ml_bp, url_prefix="/api/ml")
+    app.register_blueprint(chat_bp, url_prefix="/api/chat")
 
     @app.errorhandler(404)
     def not_found(e):
