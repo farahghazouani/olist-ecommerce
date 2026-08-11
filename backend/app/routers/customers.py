@@ -41,9 +41,7 @@ def _safe_load(filename):
     return None
 
 
-# Modele K-Means (Section 9 du notebook) charge en direct, pour scorer un
-# profil RFM qui n'est pas forcement deja dans customer_segments.csv
-# (nouveau client, ou simulation "et si ce client avait ce profil").
+
 kmeans_model = _safe_load("kmeans_customer_segments.pkl")
 scaler_rfm = _safe_load("scaler_rfm.pkl")
 
@@ -94,9 +92,7 @@ def predict_segment():
     except ValidationError as e:
         abort(422, description=str(e))
 
-    # Memes transformations que dans le notebook (features = [recency,
-    # frequency_log, monetary_log], standardisees par scaler_rfm) : l'ordre
-    # doit rester identique a celui utilise a l'entrainement.
+
     frequency_log = float(np.log1p(payload.frequency))
     monetary_log = float(np.log1p(payload.monetary))
     X = scaler_rfm.transform([[payload.recency_days, frequency_log, monetary_log]])
