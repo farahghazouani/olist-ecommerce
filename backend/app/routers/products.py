@@ -64,10 +64,7 @@ def get_top_positive_reviews():
     category = request.args.get("category")
     limit = int(request.args.get("limit", 3))
 
-    # fact_reviews ne contient que des commentaires deja non-vides (filtres
-    # a l'import, cf. import_real_reviews.py) : pas besoin de re-filtrer le
-    # texte vide ici, contrairement au TRIM(...) != '' de la requete SQL
-    # d'origine.
+    
     pipeline = [
         {"$lookup": {
             "from": "fact_order_items",
