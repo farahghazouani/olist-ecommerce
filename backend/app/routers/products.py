@@ -78,7 +78,7 @@ def get_top_positive_reviews():
             "review_score": {"$gte": 4},
             "review_comment_message": {"$nin": [None, ""]},
         }},
-        {"$group": {"_id": "$review_comment_message"}},  # equivalent DISTINCT
+        {"$group": {"_id": "$review_comment_message"}},  
     ]
     distinct_comments = [row["_id"] for row in db.fact_reviews.aggregate(pipeline)]
 
