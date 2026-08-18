@@ -27,11 +27,7 @@ def safe_load(filename: str):
     return None
 
 
-# Prefere le modele CALIBRE (probabilites fiables, cf. section "calibration"
-# du notebook) ; si le fichier n'existe pas encore (pas re-exporte depuis
-# Colab), on retombe sur le modele brut pour ne pas casser l'API, mais ses
-# probabilites seront alors a interpreter comme un score relatif, pas un
-# vrai pourcentage de risque (cf. rapport).
+
 delay_model = safe_load("model_delivery_delay_calibrated.pkl")
 delay_model_is_calibrated = delay_model is not None
 if delay_model is None:
