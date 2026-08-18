@@ -1,10 +1,4 @@
-# backend/check_chroma.py
-# A lancer depuis le dossier backend/, sur ta machine (pas ici) :
-#   python check_chroma.py
-#
-# Diagnostique en 3 temps le "Bug n°2" (search.py qui renvoie toujours
-# "Aucun avis client pertinent trouve") : le dossier chroma_db existe-t-il,
-# la collection "olist_reviews" existe-t-elle, contient-elle des documents ?
+
 
 import os
 import chromadb
