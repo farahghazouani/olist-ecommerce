@@ -1,0 +1,13 @@
+Copie ici tous les fichiers .pkl de ton ancien projet
+(data_science/models/*.pkl) :
+- model_revenue_forecast_weekly.pkl
+- model_performance_classifier.pkl
+- label_encoder_performance.pkl
+- model_delivery_delay.pkl
+- label_encoder_category.pkl
+- label_encoder_state.pkl
+- delay_model_features.pkl
+- model_category_revenue_growth.pkl
+- label_encoder_category_forecast.pkl
+- category_forecast_features.pkl
+- category_forecast_small_categories.pkl
