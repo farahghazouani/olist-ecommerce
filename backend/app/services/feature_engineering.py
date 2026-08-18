@@ -11,12 +11,7 @@ _ITEMS_PROJECTION = {"_id": 0, "order_purchase_timestamp": 1, "seller_id": 1, "p
 
 
 def build_weekly_features(db) -> pd.DataFrame:
-    """
-    Reconstruit exactement le meme dataset hebdomadaire que celui utilise
-    a l'entrainement (Section 7.8 du notebook), directement depuis MongoDB.
-    Toute evolution de cette logique doit etre repercutee ICI UNIQUEMENT,
-    puis le modele reentraine en consequence.
-    """
+ 
     date_filter = {"order_purchase_timestamp": {"$gte": STABLE_START, "$lte": STABLE_END}}
 
     orders_df = pd.DataFrame(list(db.fact_orders.find(date_filter, _ORDERS_PROJECTION)))
@@ -28,7 +23,7 @@ def build_weekly_features(db) -> pd.DataFrame:
     if not items_df.empty:
         items_df["order_purchase_timestamp"] = pd.to_datetime(items_df["order_purchase_timestamp"])
 
-    # --- Agregation hebdomadaire du CA (identique a l'entrainement) ---
+    # --- Agregation du CA (identique a l'entrainement) ---
     weekly = (
         orders_df.set_index("order_purchase_timestamp").resample("W")
         .agg(revenue=("total_payment_value", "sum"), n_orders=("order_id", "count"))
