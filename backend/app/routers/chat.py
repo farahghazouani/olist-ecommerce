@@ -10,10 +10,7 @@ chat_bp = Blueprint("chat", __name__)
 def chat():
     data = request.get_json(force=True) or {}
     message = data.get("message", "")
-    # Optionnel : donnees du graphique actuellement affiche cote frontend
-    # (titre, page, filtres actifs, donnees exactes) -- envoye soit quand
-    # l'utilisateur demande explicitement "explique ce graphique", soit
-    # automatiquement par le frontend quand un filtre change.
+
     chart_context = data.get("context")
     # Historique de conversation (liste de {"role": "user"|"assistant",
     # "content": str}), envoye par le frontend a chaque message pour que
