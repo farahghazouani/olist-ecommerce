@@ -1,0 +1,64 @@
+/* Layout Principal avec Chat latéral */
+.page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+.page-main-col {
+  position: relative;
+  z-index: 2;
+}
+
+.assistant-panel {
+  position: relative;
+  z-index: 1;
+}
+
+/* Disposer les 4 cartes de segments en grille 2x2 */
+.segment-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.segment-card {
+  padding: 18px 20px;
+}
+
+.segment-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.segment-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.segment-stats .num {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-high);
+}
+
+.segment-stats small {
+  font-size: 11px;
+  color: var(--text-low);
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .segment-cards {
+    grid-template-columns: 1fr; /* Passage sur 1 colonne sur petit écran */
+  }
+}

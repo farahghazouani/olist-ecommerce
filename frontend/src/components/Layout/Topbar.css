@@ -1,0 +1,14 @@
+.topbar {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 20px; padding-bottom: 22px; margin-bottom: 22px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.topbar-subtitle { margin-top: 6px; font-size: 13.5px; color: var(--text-mid); max-width: 560px; }
+.topbar-filters { display: flex; gap: 10px; flex-shrink: 0; }
+.topbar-select {
+  background: var(--surface-2); color: var(--text-high); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px;
+  font-family: var(--font-body); cursor: pointer;
+}
+.topbar-select:hover { border-color: var(--border-strong); }
+.topbar-select:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }

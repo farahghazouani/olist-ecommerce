@@ -1,0 +1,51 @@
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  min-height: 100svh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 14px;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 22px; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 8px; background: var(--brand-soft);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+.brand-name { font-family: var(--font-display); font-weight: 700; font-size: 14.5px; color: var(--text-high); }
+.brand-sub { font-family: var(--font-data); font-size: 10.5px; letter-spacing: 0.06em; color: var(--text-low); text-transform: uppercase; }
+
+.sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group-label {
+  font-family: var(--font-data); font-size: 10px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--text-low); padding: 6px 10px 4px;
+}
+
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: var(--radius-sm); color: var(--text-mid); text-decoration: none;
+  font-size: 13.5px; font-weight: 500; position: relative;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-item svg { opacity: 0.75; }
+.nav-item:hover { background: var(--surface-hover); color: var(--text-high); }
+.nav-item.active { background: var(--brand-soft); color: var(--brand-strong); }
+.nav-item.active svg { opacity: 1; }
+.nav-item.active::before {
+  content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px;
+  width: 2.5px; border-radius: 2px; background: var(--brand);
+}
+
+.sidebar-footer { padding-top: 14px; border-top: 1px solid var(--border); }
+.status-pill {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: var(--radius-sm); background: var(--positive-soft);
+  color: var(--positive); font-size: 12px; font-weight: 500;
+}
+.status-pill .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--positive); }

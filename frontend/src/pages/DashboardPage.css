@@ -1,0 +1,105 @@
+/* Layout Principal avec Chat latéral */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Gestion du z-index pour éviter que le tooltip du graphique ne passe sous le chat */
+.dashboard-main-col {
+  position: relative;
+  z-index: 2;
+}
+
+.assistant-panel {
+  position: relative;
+  z-index: 1;
+}
+
+/* Disposition des KPI en 2x2 */
+/* Disposition des KPI en 2x2 avec marge basse */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* Espacement du composant explicatif */
+.dashboard-main-col > div,
+.dashboard-main-col > p {
+  margin-top: 16px;
+  margin-bottom: 24px; /* Crée l'espace nécessaire au-dessus des graphiques */
+}
+
+/* Disposition des graphiques côte à côte avec marge haute et basse */
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 20px;    /* Sépare nettement le texte des graphiques */
+  margin-bottom: 20px;
+}
+
+/* Carte des commandes à risque */
+.risk-table-card {
+  padding: 20px;
+}
+
+.risk-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.risk-delay {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Style repliable (<details> / <summary>) pour la liste des commandes */
+.risk-table-collapsible {
+  cursor: default;
+}
+
+.risk-table-summary {
+  cursor: pointer;
+  list-style: none; /* Cache la flèche navigateur par défaut */
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 4px;
+}
+
+.risk-table-summary::-webkit-details-marker {
+  display: none; /* Cache la flèche sur WebKit (Chrome/Safari/Edge) */
+}
+
+.risk-table-summary::before {
+  content: '▸';
+  margin-right: 8px;
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.risk-table-collapsible[open] .risk-table-summary::before {
+  transform: rotate(90deg);
+}
+
+.risk-table-collapsible .risk-table {
+  margin-top: 14px;
+}
+
+/* Responsive / Écrans réduits */
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr; /* Empile le chat sous la colonne principale */
+  }
+
+  .kpi-row,
+  .charts-row {
+    grid-template-columns: 1fr; /* Passent sur 1 colonne sur petit écran */
+  }
+}

@@ -1,0 +1,133 @@
+/* ==========================================================================
+   OLIST BI — DESIGN TOKENS
+   Concept: "Control Tower" — un poste de pilotage logistique.
+   ========================================================================== */
+
+:root {
+  --bg: #f5f6f9;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --surface-hover: #f0f1f5;
+  --border: #e2e4ea;
+  --border-strong: #cdd1db;
+
+  --text-high: #10131a;
+  --text-mid: #454b5c;
+  --text-low: #868da0;
+
+  --brand: #3457d5;
+  --brand-soft: rgba(52, 87, 213, 0.1);
+  --brand-strong: #24409c;
+
+  --positive: #0f9d6c;
+  --positive-soft: rgba(15, 157, 108, 0.1);
+
+  --warning: #b5750a;
+  --warning-soft: rgba(181, 117, 10, 0.12);
+
+  --danger: #d1403a;
+  --danger-soft: rgba(209, 64, 58, 0.1);
+
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-data: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-card: 0 1px 2px rgba(16, 19, 26, 0.04), 0 6px 20px -8px rgba(16, 19, 26, 0.08);
+  --shadow-pop: 0 12px 32px -8px rgba(16, 19, 26, 0.22);
+
+  --sidebar-w: 232px;
+  --topbar-h: 68px;
+
+  color-scheme: light;
+}
+
+/* Mode sombre disponible en option (data-theme='dark'), plus applique par
+   defaut -- feedback utilisateur : le clair est plus lisible pour du BI. */
+[data-theme='dark'] {
+  --bg: #0a0d13;
+  --surface: #10141c;
+  --surface-2: #151a24;
+  --surface-hover: #1b2130;
+  --border: #232838;
+  --border-strong: #333a4f;
+
+  --text-high: #eef0f5;
+  --text-mid: #a2a9bd;
+  --text-low: #676f85;
+
+  --brand: #5c85ff;
+  --brand-soft: rgba(92, 133, 255, 0.14);
+  --brand-strong: #7fa0ff;
+
+  --positive: #2fd48f;
+  --positive-soft: rgba(47, 212, 143, 0.12);
+
+  --warning: #f0a93b;
+  --warning-soft: rgba(240, 169, 59, 0.13);
+
+  --danger: #f0685f;
+  --danger-soft: rgba(240, 104, 95, 0.13);
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 8px 24px -10px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 20px 48px -12px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --bg: #f5f6f9;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --surface-hover: #f0f1f5;
+  --border: #e2e4ea;
+  --border-strong: #cdd1db;
+  --text-high: #10131a;
+  --text-mid: #454b5c;
+  --text-low: #868da0;
+  --brand: #3457d5;
+  --brand-soft: rgba(52, 87, 213, 0.1);
+  --brand-strong: #24409c;
+  --positive: #0f9d6c;
+  --positive-soft: rgba(15, 157, 108, 0.1);
+  --warning: #b5750a;
+  --warning-soft: rgba(181, 117, 10, 0.12);
+  --danger: #d1403a;
+  --danger-soft: rgba(209, 64, 58, 0.1);
+  --shadow-card: 0 1px 2px rgba(16, 19, 26, 0.04), 0 6px 20px -8px rgba(16, 19, 26, 0.08);
+  --shadow-pop: 0 12px 32px -8px rgba(16, 19, 26, 0.22);
+  color-scheme: light;
+}
+
+.num {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.eyebrow {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-low);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

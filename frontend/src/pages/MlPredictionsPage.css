@@ -1,0 +1,42 @@
+.ml-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.ml-card { padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+.ml-card-wide { grid-column: 1 / -1; }
+.ml-card-header p { margin-top: 6px; font-size: 13px; color: var(--text-mid); line-height: 1.5; }
+
+.ml-form-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.ml-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.ml-form-row label, .ml-form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-mid); font-weight: 500; flex: 1; min-width: 130px; }
+.ml-form-row select, .ml-form-grid select, .ml-form-grid input[type='number'] { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; color: var(--text-high); font-family: var(--font-body); }
+
+.ml-checkbox { flex-direction: row !important; align-items: center; gap: 8px !important; padding-top: 18px; }
+.ml-checkbox input { width: 15px; height: 15px; }
+
+.ml-btn { background: var(--brand); color: #fff; border: none; border-radius: var(--radius-sm); padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; align-self: flex-start; }
+.ml-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.ml-result { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.ml-result-main, .ml-confidence, .risk-badge { background: var(--surface-hover); border-radius: var(--radius-md); padding: 14px 16px; }
+.ml-result-value { font-size: 24px; font-weight: 600; color: var(--text-high); margin: 6px 0 4px; }
+.ml-result-sub { font-size: 12.5px; color: var(--text-mid); line-height: 1.4; }
+.ml-confidence p { font-size: 12.5px; color: var(--text-mid); line-height: 1.5; margin-top: 6px; }
+.ml-confidence-note { margin-top: 8px !important; color: var(--text-low) !important; font-style: italic; }
+.ml-factors { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--text-mid); line-height: 1.7; }
+
+.risk-badge { border-left: 3px solid var(--accent-color, var(--brand)); }
+.risk-badge.accent-positive { --accent-color: var(--positive); }
+.risk-badge.accent-warning { --accent-color: var(--warning); }
+.risk-badge.accent-danger { --accent-color: var(--danger); }
+.risk-badge .eyebrow { color: var(--accent-color, var(--text-low)); }
+
+.ml-legacy-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ml-legacy-card { background: var(--surface-hover); border-radius: var(--radius-md); padding: 16px 18px; border-left: 3px solid var(--accent-color, var(--brand)); }
+.ml-legacy-card.accent-positive { --accent-color: var(--positive); }
+.ml-legacy-card.accent-warning { --accent-color: var(--warning); }
+.ml-legacy-card.accent-danger { --accent-color: var(--danger); }
+.ml-legacy-card .eyebrow { color: var(--accent-color, var(--text-low)); }
+
+@media (max-width: 900px) {
+  .ml-grid { grid-template-columns: 1fr; }
+  .ml-result { grid-template-columns: 1fr; }
+  .ml-legacy-row { grid-template-columns: 1fr; }
+}

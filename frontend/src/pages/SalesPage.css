@@ -1,0 +1,75 @@
+.season-explorer {
+  padding: 20px;
+}
+
+.season-explorer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.season-result {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.season-result-main {
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.season-icon {
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.season-category-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--text-high);
+}
+
+.season-result-sub {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-mid);
+}
+
+.season-reviews {
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.season-reviews-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-mid);
+  line-height: 1.8;
+}
+
+.season-reviews-empty {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-low);
+}
+
+@media (max-width: 700px) {
+  .season-result {
+    grid-template-columns: 1fr;
+  }
+}

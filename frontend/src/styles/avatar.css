@@ -1,0 +1,25 @@
+/* Animations pour l'avatar interactif */
+@keyframes avatarFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+
+@keyframes avatarPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(0.98); }
+}
+
+.avatar-interactive {
+  animation: avatarFloat 4s ease-in-out infinite;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 10px 15px rgba(99, 102, 241, 0.2));
+}
+
+.avatar-interactive:hover {
+  transform: scale(1.05) translateY(-5px);
+  filter: drop-shadow(0 15px 25px rgba(99, 102, 241, 0.35));
+}
+
+.avatar-thinking {
+  animation: avatarPulse 1.2s ease-in-out infinite;
+}

@@ -1,0 +1,25 @@
+# Web Framework & API
+flask
+flask-cors
+python-dotenv
+
+# Base de donnees
+pymongo
+
+# Data & Machine Learning
+pandas
+numpy
+scikit-learn
+joblib
+
+# IA & Chatbot / RAG
+ollama
+langdetect
+sentence-transformers
+chromadb
+
+# Generation PDF 
+reportlab
+
+# Validation des payloads
+pydantic
