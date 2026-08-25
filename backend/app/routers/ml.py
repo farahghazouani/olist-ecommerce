@@ -1,4 +1,5 @@
 # backend/app/routers/ml.py
+import re
 from pathlib import Path
 import joblib
 import pandas as pd
@@ -169,14 +170,33 @@ def list_forecast_categories():
     return jsonify(sorted(le_category_forecast.classes_.tolist()))
 
 
+MAX_FORECAST_MONTHS_AHEAD = 6  # plafond raisonnable : au-dela, l'extrapolation
+                               # recursive accumule trop d'incertitude pour
+                               # etre presentee comme fiable.
+
+
 @ml_bp.get("/forecast/by-category")
 def forecast_by_category():
-    """Prevision du CA du mois suivant pour une categorie (et optionnellement
-    sa part pour un etat donne), via l'approche top-down : croissance
-    predite x dernier CA connu, puis repartition par la part historique
-    de l'etat dans cette categorie."""
+    """Prevision du CA pour une categorie (et optionnellement sa part pour
+    un etat donne), via l'approche top-down : croissance predite x dernier
+    CA connu, puis repartition par la part historique de l'etat.
+
+    BUG CORRIGE ICI : la version precedente ne pouvait prevoir QUE le mois
+    immediatement suivant le dernier mois connu (aout 2018 -> septembre
+    2018 systematiquement), sans aucun moyen de cibler un mois plus
+    eloigner (ex: octobre, decembre) -- une demande "prevision pour
+    decembre" retournait silencieusement la prevision de septembre, sans
+    prevenir l'utilisateur du decalage. Desormais, un parametre optionnel
+    'target_month' (format 'YYYY-MM') declenche une PREVISION RECURSIVE :
+    le modele applique sa prediction mois par mois, en chainant chaque
+    prevision comme entree (lag) du mois suivant, jusqu'a atteindre le mois
+    cible. Plafonne a MAX_FORECAST_MONTHS_AHEAD pour eviter une
+    extrapolation incontrolee, avec le nombre de mois recursifs retourne
+    explicitement (le tool cote agent doit avertir l'utilisateur que
+    l'incertitude augmente avec l'horizon)."""
     category = request.args.get("category")
     state = request.args.get("state")
+    target_month = request.args.get("target_month")  # format 'YYYY-MM', optionnel
     if not category:
         abort(400, description="Le parametre 'category' est requis.")
 
@@ -200,34 +220,77 @@ def forecast_by_category():
     if row.empty:
         abort(404, description=f"Pas d'historique pour la categorie '{grouped_category}'.")
     r = row.iloc[0]
-
-    # Reconstruction de la ligne de features pour le mois SUIVANT le dernier
-    # connu : le lag1 du mois suivant = revenue du dernier mois connu, etc.
-    next_month_date = pd.Timestamp(r["month"]) + pd.DateOffset(months=1)
-    next_lag1 = float(r["revenue"])
-    next_lag2 = float(r["revenue_lag1"])
-    next_roll3 = float(np.mean([r["revenue"], r["revenue_lag1"], r["revenue_lag2"]]))
+    last_known_month = pd.Timestamp(r["month"])
     category_enc = int(le_category_forecast.transform([grouped_category])[0])
 
-    feature_row = pd.DataFrame([{
-        "category_enc": category_enc,
-        "month_index": int(r["month_index"]) + 1,
-        "month_of_year": next_month_date.month,
-        "revenue_lag1": next_lag1,
-        "revenue_lag2": next_lag2,
-        "revenue_roll3": next_roll3,
-    }])[category_forecast_features]
+    # Determine le nombre de mois a projeter recursivement.
+    # BUG CORRIGE ICI : pd.Timestamp(f"{target_month}-01") ne leve PAS
+    # d'exception sur une entree deja invalide-mais-plausible comme
+    # '2018-01-24' (pandas la reinterprete silencieusement en
+    # '2018-01-24 01:00:00' au lieu de rejeter le format) -- le
+    # except (ValueError, TypeError) ne se declenchait donc jamais pour ce
+    # cas, laissant passer un mois errone sans avertir personne. On valide
+    # maintenant le format EXACT par regex avant tout parsing.
+    months_ahead = 1
+    if target_month:
+        if not re.fullmatch(r"\d{4}-\d{2}", target_month):
+            abort(400, description=(
+                f"target_month doit etre exactement au format 'YYYY-MM' (ex: '2018-10'), "
+                f"reçu : '{target_month}'."
+            ))
+        try:
+            target_ts = pd.Timestamp(f"{target_month}-01")
+        except ValueError:
+            abort(400, description=f"target_month invalide : '{target_month}' (mois hors de 01-12 ?).")
+        months_ahead = (target_ts.year - last_known_month.year) * 12 + (target_ts.month - last_known_month.month)
+        if months_ahead < 1:
+            abort(400, description=(
+                f"target_month ({target_month}) n'est pas dans le futur par rapport au dernier mois "
+                f"connu ({last_known_month.date()})."
+            ))
+        if months_ahead > MAX_FORECAST_MONTHS_AHEAD:
+            abort(400, description=(
+                f"target_month trop eloigne : {months_ahead} mois d'ecart, maximum supporte = "
+                f"{MAX_FORECAST_MONTHS_AHEAD} (au-dela, la prevision recursive n'est plus fiable)."
+            ))
 
-    growth_ratio = max(float(category_growth_model.predict(feature_row)[0]), 0.0)
-    predicted_revenue = growth_ratio * next_lag1
+    # Boucle recursive : chaque iteration re-applique le modele en utilisant
+    # la prevision precedente comme nouveau lag1 (et l'ancien lag1 devient
+    # lag2), exactement comme le ferait une vraie prevision mois par mois.
+    lag1 = float(r["revenue"])
+    lag2 = float(r["revenue_lag1"])
+    roll3_history = [float(r["revenue_lag2"]), lag2, lag1]
+    current_date = last_known_month
+    predicted_revenue = lag1
+    growth_ratio = 1.0
+
+    for step in range(months_ahead):
+        current_date = current_date + pd.DateOffset(months=1)
+        roll3 = float(np.mean(roll3_history[-3:]))
+        feature_row = pd.DataFrame([{
+            "category_enc": category_enc,
+            "month_index": int(r["month_index"]) + step + 1,
+            "month_of_year": current_date.month,
+            "revenue_lag1": lag1,
+            "revenue_lag2": lag2,
+            "revenue_roll3": roll3,
+        }])[category_forecast_features]
+
+        growth_ratio = max(float(category_growth_model.predict(feature_row)[0]), 0.0)
+        predicted_revenue = growth_ratio * lag1
+
+        roll3_history.append(predicted_revenue)
+        lag2 = lag1
+        lag1 = predicted_revenue
 
     result = {
         "category": category,
         "category_grouped": grouped_category,
-        "last_known_month": str(pd.Timestamp(r["month"]).date()),
-        "forecast_month": str(next_month_date.date()),
+        "last_known_month": str(last_known_month.date()),
+        "forecast_month": str(current_date.date()),
         "predicted_revenue_total": round(predicted_revenue, 2),
         "growth_ratio": round(growth_ratio, 3),
+        "months_ahead": months_ahead,
     }
 
     if state:

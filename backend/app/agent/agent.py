@@ -26,6 +26,16 @@ reduction du role du LLM : c'est du grounding standard en prod -- un LLM ne
 doit jamais reformuler un chiffre exact (risque d'hallucination/arrondi),
 il se contente de choisir QUEL chiffre aller chercher. Le LLM garde donc son
 role reel : decider, pas calculer.
+
+RAPPEL CRITIQUE SUR LA TAILLE DU PROMPT (lu au moins 3 fois dans l'historique
+de debug de ce projet) : SYSTEM_PROMPT + TOOLS_SPEC sont envoyes EN ENTIER a
+CHAQUE appel du routeur, avant meme de lire le message de l'utilisateur. Sur
+un CPU contraint (~39 tokens/s de lecture mesures), un prompt fixe de 2000+
+tokens peut a lui seul consommer 50+ secondes -- avant tout raisonnement.
+Ce fichier doit rester CONCIS : ajouter une regle ou un exemple ici a un
+cout en LATENCE GLOBALE, sur CHAQUE question, pas seulement sur les cas que
+la regle vise a corriger. Toujours mesurer avant/apres (voir le script de
+mesure utilise dans l'historique de debug) avant d'agrandir ce prompt.
 """
 import inspect
 import json
@@ -44,45 +54,19 @@ from app.agent.tools import AVAILABLE_FUNCTIONS, TOOLS_SPEC
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 
 ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "qwen2.5:3b-instruct")
-
-# Par defaut IDENTIQUE a ROUTER_MODEL -- voir docstring : sur une machine
-# CPU contrainte, deux modeles differents charges en meme temps se
-# disputent les memes coeurs et ralentissent TOUT, y compris les questions
-# triviales (mesure : 2 modeles simultanes = plus lent que chacun seul).
 SYNTHESIS_MODEL = os.environ.get("SYNTHESIS_MODEL", ROUTER_MODEL)
 
 _ollama_lock = threading.Lock()
 
-ROUTER_TIMEOUT_SECONDS = int(os.environ.get("ROUTER_TIMEOUT_SECONDS", "60"))
+ROUTER_TIMEOUT_SECONDS = int(os.environ.get("ROUTER_TIMEOUT_SECONDS", "75"))
 SYNTHESIS_TIMEOUT_SECONDS = int(os.environ.get("SYNTHESIS_TIMEOUT_SECONDS", "120"))
 
-# IMPORTANT -- Ollama garde un modele charge en RAM pendant "keep_alive"
-# INDEPENDAMMENT du cycle de vie de Flask : redemarrer `python -m app.main`
-# NE decharge PAS un modele deja resident dans Ollama (c'est un processus a
-# part, qui tourne en arriere-plan independamment). Si SYNTHESIS_MODEL !=
-# ROUTER_MODEL a un moment donne (ancien test, script, env var oubliee dans
-# un autre terminal), le modele reste en memoire jusqu'a expiration de ce
-# delai -- meme apres avoir corrige le code et redemarre Flask. C'est ce qui
-# explique un "ca marche, puis ca replante sans rien avoir change" : la
-# contention RAM revient des qu'un ancien modele encore resident se
-# reactive. On raccourcit donc le delai par defaut (30min -> 5min) pour
-# limiter la fenetre de contention residuelle possible. Le cout en echange
-# est un rechargement (quelques secondes) si le modele reste inactif plus
-# de 5 min -- meilleur compromis que 30 min de contention silencieuse sur
-# une machine a RAM limitee.
-#
-# VERIFICATION MANUELLE RECOMMANDEE avant toute session de test :
-#   ollama ps                    -> liste ce qui est REELLEMENT charge la
-#   ollama stop <nom_du_modele>  -> le decharger immediatement si besoin
-# Ne jamais supposer qu'un redemarrage de Flask suffit a lui seul.
 KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "5m")
 
 
 def _ollama_chat(messages, tools=None, model=ROUTER_MODEL, options=None, keep_alive=None, timeout_seconds=45):
     """Appelle POST /api/chat sur Ollama en HTTP streaming, avec un timeout
-    qui ferme REELLEMENT la connexion en cas de depassement (contrairement a
-    un pattern ThreadPoolExecutor, qui attend en silence meme apres un
-    TimeoutError -- ne jamais reintroduire ce bug, voir historique)."""
+    qui ferme REELLEMENT la connexion en cas de depassement."""
     payload = {
         "model": model,
         "messages": messages,
@@ -134,60 +118,34 @@ def _ollama_chat(messages, tools=None, model=ROUTER_MODEL, options=None, keep_al
     return {"message": message}, None
 
 
-SYSTEM_PROMPT = """Tu es un assistant BI pour une plateforme e-commerce (marketplace Olist).
+# ============================================================================
+# SYSTEM_PROMPT -- CONDENSE DELIBEREMENT. Une version plus longue a ete
+# testee (12 regles detaillees + 7 exemples multi-lignes) : elle n'a
+# apporte aucun gain de fiabilite mesurable et a fait remonter le temps de
+# lecture fixe pres du niveau d'avant optimisation. Toute regle ajoutee ici
+# doit se justifier par un cas reel observe, en 1 ligne si possible.
+# ============================================================================
+SYSTEM_PROMPT = """Assistant BI e-commerce (Olist). Règles :
+1. Question sur des données/chiffres -> utilise le(s) outil(s) approprié(s). Plusieurs demandes distinctes -> un appel par demande, même réponse.
+2. Salutation/discussion générale -> réponds normalement, sans outil.
+3. N'invente jamais un paramètre hors du schéma. Paramètres optionnels non fournis -> le serveur les complète, ne refuse jamais un outil pour ça.
+4. Données réelles : sept 2016 à août 2018 seulement. Hors période -> pas d'outil, dis-le. Ne s'applique pas aux prévisions.
+5. Message ambigu/trop court -> pas d'outil, demande une clarification.
+6. Vérifie d'abord l'historique et le contexte de graphique fourni -- utilise-le SEULEMENT s'il répond vraiment à la question posée. S'il ne répond pas à la question (autre sujet, autre métrique), IGNORE-le et appelle l'outil approprié.
+7. Ne traduis jamais un nom de catégorie donné par l'utilisateur.
+8. Un code d'État brésilien (SP, RJ...) n'est jamais une catégorie.
+9. Si un seul paramètre diffère d'une question précédente (catégorie, état, mois, montant...), rappelle l'outil avec les nouvelles valeurs -- ne recopie jamais un résultat pour des paramètres différents.
+10. Un mot comme "prévision/prévois/forecast" -> forecast_category_revenue. Si un mois ET une année sont mentionnés (ex: septembre 2018), passe-les en target_month au format YYYY-MM.
+11. Ne mentionne JAMAIS un nom d'outil, ni ton raisonnement sur quel outil utiliser, dans ta réponse à l'utilisateur -- décide en silence, puis réponds directement avec le résultat ou l'explication, jamais en décrivant le processus.
 
-RÈGLES :
-1. Pour une question portant sur des CHIFFRES ou des DONNÉES DE L'ENTREPRISE
-   (ventes, CA, prévisions, performance, avis clients), tu DOIS utiliser le ou
-   les outils appropriés. Si le message contient PLUSIEURS demandes de
-   données distinctes, tu DOIS appeler un outil pour CHACUNE d'entre elles
-   dans la MÊME réponse.
-2. Pour une salutation ou une conversation générale ne concernant PAS les
-   données de l'entreprise, réponds normalement SANS utiliser d'outil.
-3. N'INVENTE JAMAIS un paramètre absent du schéma d'un outil. Un outil peut
-   avoir des paramètres OPTIONNELS (absents de "required") : tu n'es JAMAIS
-   obligé de les fournir — appelle l'outil avec les paramètres "required"
-   que tu connais, le serveur gère le reste et le signale toujours.
-4. Les données HISTORIQUES couvrent uniquement septembre 2016 à août 2018.
-   Pour un chiffre HISTORIQUE hors de cette période, N'APPELLE AUCUN outil et
-   dis-le. Cette règle NE s'applique PAS aux PRÉVISIONS.
-5. Si le message est ambigu, trop court, ou un mot générique isolé, N'APPELLE
-   AUCUN outil — demande une clarification, ne devine jamais une intention.
-6. AVANT d'appeler un outil, vérifie si l'info est DÉJÀ dans l'historique OU
-   dans le contexte de graphique fourni, ET si ce contexte est réellement
-   pertinent. Si oui, N'APPELLE AUCUN outil. Le contexte de graphique n'est
-   PAS toujours pertinent — s'il ne répond pas à la question, IGNORE-le et
-   appelle l'outil approprié.
-7. Ne traduis/reformule JAMAIS un nom de catégorie fourni par l'utilisateur.
-8. Un code d'État brésilien N'EST JAMAIS une catégorie de produit.
-9. RÈGLE CRITIQUE, SOUVENT MAL APPLIQUÉE : si la question actuelle porte sur
-   les MÊMES paramètres (catégorie, état, mois, montants...) qu'une question
-   précédente dans l'historique, tu PEUX réutiliser la réponse déjà donnée
-   SANS rappeler l'outil. MAIS si NE SERAIT-CE QU'UN SEUL paramètre diffère
-   de la question précédente (catégorie différente, état différent, mois
-   différent, montant différent...), tu DOIS IMPÉRATIVEMENT rappeler l'outil
-   avec les NOUVELLES valeurs — ne recopie JAMAIS un résultat numérique
-   précédent pour des paramètres différents, même si la question ressemble
-   à une question déjà posée.
-
-EXEMPLES :
-- "Risque de retard pour meubles à SP en novembre ?" puis "et pour beleza_saude à SP en mars ?" → DEUX appels séparés à predict_delivery_risk, avec des paramètres DIFFÉRENTS à chaque fois (catégorie et mois ont changé) — ne jamais renvoyer le même chiffre pour les deux.
-- "Pourquoi meubles est mal notée ?" → explain_category_complaints(category="meubles")
-- "Que disent les clients de meubles ?" → search_reviews(query="avis meubles", category="meubles")
-- "Quel segment pour un client avec 5 commandes et 2000 R$ ?" → predict_customer_segment(recency=0, frequency=5, monetary=2000)
-- "Quel a été le CA en février 2017 ?" → get_revenue_for_period(month="2017-02")
-- "Combien on a fait la semaine dernière ?" → get_revenue_for_period(weeks_ago=0)
-- "Quelles sont les catégories les plus rentables ?" → get_top_categories()
-- "Combien de commandes ont été passées ?" / "chiffre d'affaires global/total" → get_kpi_summary()
+Exemples : "risque retard meubles SP novembre" -> predict_delivery_risk(category="meubles", customer_state="SP", order_month=11) ; "pourquoi meubles mal notée" -> explain_category_complaints(category="meubles") ; "CA février 2017" -> get_revenue_for_period(month="2017-02") ; "prévision beleza_saude pour décembre 2018" -> forecast_category_revenue(category="beleza_saude", target_month="2018-12") ; "segment client 5 commandes 2000 R$" -> predict_customer_segment(recency=0, frequency=5, monetary=2000).
 """
+
 
 def _format_revenue_by_month(r, lang: str) -> str:
     """Affiche REELLEMENT les chiffres mois par mois, plus le meilleur et le
     pire mois (calcules en Python via max()/min(), aucun risque
-    d'invention -- ce sont des faits exacts issus de l'API). L'ancienne
-    version se contentait de dire 'voici l'evolution sur X mois' SANS
-    jamais montrer un seul chiffre -- inutile comme reponse a une question
-    qui demande justement de voir les donnees."""
+    d'invention)."""
     if not (isinstance(r, list) and len(r) > 0):
         return "Aucune donnée d'évolution mensuelle disponible." if lang == "fr" else "No monthly revenue data available."
 
@@ -208,6 +166,44 @@ def _format_revenue_by_month(r, lang: str) -> str:
     )
 
 
+def _format_forecast(r: dict, lang: str) -> str:
+    """Formate la prevision -- TOUJOURS avec le mois REELLEMENT prevu en
+    evidence, et un avertissement si la prevision est recursive (months_ahead > 1)."""
+    months_ahead = r.get("months_ahead", 1)
+    state_part = ""
+    if r.get("state"):
+        state_part = (
+            f", dont {r['predicted_revenue_state']:,.2f} R$ pour {r['state']}"
+            if lang == "fr" else
+            f", of which {r['predicted_revenue_state']:,.2f} R$ for {r['state']}"
+        )
+
+    if lang == "en":
+        base = (
+            f"The revenue forecast for category **{r['category']}** ({r['forecast_month']}) is "
+            f"{r['predicted_revenue_total']:,.2f} R${state_part}."
+        )
+        if months_ahead > 1:
+            base += (
+                f" ⚠️ This forecast projects {months_ahead} months ahead by chaining monthly "
+                "predictions -- uncertainty increases with the horizon, treat it as indicative "
+                "rather than precise."
+            )
+        return base
+
+    base = (
+        f"La prévision de CA pour la catégorie **{r['category']}** ({r['forecast_month']}) est de "
+        f"{r['predicted_revenue_total']:,.2f} R${state_part}."
+    )
+    if months_ahead > 1:
+        base += (
+            f" ⚠️ Cette prévision projette {months_ahead} mois à l'avance en chaînant des "
+            "prédictions mensuelles successives -- l'incertitude augmente avec l'horizon, à "
+            "prendre comme indicatif plutôt que précis."
+        )
+    return base
+
+
 TEMPLATES_FR = {
     "get_kpi_summary": lambda r: (
         f"Le chiffre d'affaires total est de {r['total_revenue']:,.2f} R$ "
@@ -223,11 +219,7 @@ TEMPLATES_FR = {
     "get_top_categories": lambda r: (
         "Voici le classement : " + "; ".join(f"{i+1}. {c['category']} ({c['revenue']:,.2f} R$)" for i, c in enumerate(r))
     ),
-    "forecast_category_revenue": lambda r: (
-        f"La prévision de CA pour la catégorie **{r['category']}** ({r['forecast_month']}) est de "
-        f"{r['predicted_revenue_total']:,.2f} R$"
-        + (f", dont {r['predicted_revenue_state']:,.2f} R$ pour {r['state']}." if r.get('state') else ".")
-    ),
+    "forecast_category_revenue": lambda r: _format_forecast(r, "fr"),
     "predict_delivery_risk": lambda r: (
         f"Risque de retard estimé : **{r['risk_level']}** ({r['risk_probability']*100:.1f}%)."
         + (f" Facteurs principaux : {', '.join(r['top_factors'])}." if r.get('top_factors') else "")
@@ -254,11 +246,7 @@ TEMPLATES_EN = {
     "get_top_categories": lambda r: (
         "Top categories: " + "; ".join(f"{i+1}. {c['category']} ({c['revenue']:,.2f} R$)" for i, c in enumerate(r))
     ),
-    "forecast_category_revenue": lambda r: (
-        f"The revenue forecast for category **{r['category']}** ({r['forecast_month']}) is "
-        f"{r['predicted_revenue_total']:,.2f} R$"
-        + (f", of which {r['predicted_revenue_state']:,.2f} R$ for {r['state']}." if r.get('state') else ".")
-    ),
+    "forecast_category_revenue": lambda r: _format_forecast(r, "en"),
     "predict_delivery_risk": lambda r: (
         f"Estimated delay risk: **{r['risk_level']}** ({r['risk_probability']*100:.1f}%)."
         + (f" Main factors: {', '.join(r['top_factors'])}." if r.get('top_factors') else "")
@@ -366,6 +354,42 @@ def _build_context_message(chart_context: dict, lang: str) -> str:
     )
 
 
+# ============================================================================
+# INDICE MOIS/ANNEE PRECALCULE -- allege le raisonnement du routeur, PAS
+# une decision d'outil a sa place.
+# ============================================================================
+_MONTHS_FR = {
+    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6,
+    "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11,
+    "décembre": 12, "decembre": 12,
+}
+_MONTHS_EN = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6, "july": 7,
+    "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+_MONTH_YEAR_PATTERN = re.compile(
+    r"\b(" + "|".join(list(_MONTHS_FR) + list(_MONTHS_EN)) + r")\b\D{0,10}(\d{4})\b", re.I
+)
+_ISO_DATE_PATTERN = re.compile(r"\b(\d{4})-(\d{2})(?:-\d{2})?\b")
+
+
+def _detect_month_year_hint(message: str) -> str | None:
+    iso_match = _ISO_DATE_PATTERN.search(message)
+    if iso_match:
+        year, month = iso_match.group(1), iso_match.group(2)
+        if 1 <= int(month) <= 12:
+            return f"{year}-{month}"
+
+    match = _MONTH_YEAR_PATTERN.search(message)
+    if not match:
+        return None
+    month_word, year = match.group(1).lower(), match.group(2)
+    month_num = _MONTHS_FR.get(month_word) or _MONTHS_EN.get(month_word)
+    if not month_num:
+        return None
+    return f"{year}-{month_num:02d}"
+
+
 _STATUS_FR = {
     "thinking": "🧠 Choix de l'outil approprié…",
     "tool_call": "🔧 Récupération de « {label} »…",
@@ -412,6 +436,9 @@ if _stale_zero_arg:
 
 _COMPOSITE_MARKERS = re.compile(r"\bet\s+(?:les?|la|le|des)\b|\bcompare\b|\bainsi que\b|\blien entre\b", re.I)
 
+_TOP_CATEGORIES_PATTERN = re.compile(r"cat[ée]gories?\s+(les\s+)?plus\s+(rentables?|vendues?)|top\s*cat[ée]gories?", re.I)
+_HAS_NUMBER = re.compile(r"\d")
+
 
 def _try_deterministic_route(message: str):
     if _COMPOSITE_MARKERS.search(message):
@@ -419,6 +446,8 @@ def _try_deterministic_route(message: str):
     for pattern, tool in _ZERO_ARG_PATTERNS:
         if pattern.search(message):
             return tool
+    if _TOP_CATEGORIES_PATTERN.search(message) and not _HAS_NUMBER.search(message):
+        return "get_top_categories"
     return None
 
 
@@ -446,13 +475,14 @@ def _resolve_lang(message: str, history: list | None) -> str:
     return "fr"
 
 
-# Fenetre d'historique reduite (etait 10) : chaque message supplementaire
-# grossit le prompt envoye a CHAQUE appel du routeur, ce qui ralentit
-# progressivement un petit modele CPU au fil d'une longue conversation --
-# c'est la cause la plus probable des timeouts qui reapparaissent apres
-# plusieurs echanges reussis. 6 messages = ~3 echanges, suffisant pour le
-# suivi conversationnel courant sans laisser le prompt grossir sans limite.
-HISTORY_WINDOW = 6
+HISTORY_WINDOW = 4
+HISTORY_MESSAGE_MAX_CHARS = 300
+
+
+def _truncate_for_history(content: str) -> str:
+    if len(content) <= HISTORY_MESSAGE_MAX_CHARS:
+        return content
+    return content[:HISTORY_MESSAGE_MAX_CHARS] + " […]"
 
 
 def _run_agent_events(user_message, chart_context, history, max_iterations):
@@ -471,24 +501,13 @@ def _run_agent_events(user_message, chart_context, history, max_iterations):
         ), "elapsed": round(time.time() - t0, 2)}
         return
 
-    # Le routage deterministe s'applique QUE LE CONTEXTE DE GRAPHIQUE SOIT
-    # PRESENT OU NON. Le frontend envoie ce contexte en PERMANENCE des qu'un
-    # graphique est affiche (donc quasiment tout le temps sur le dashboard)
-    # -- le gater derriere "if not has_context" neutralise le routage
-    # deterministe en usage reel (deja corrige une fois avant sur l'ancien
-    # fast-path regex, reintroduit ici par erreur). Ces 3 outils sont
-    # zero-parametre et leurs mots-cles sont sans ambiguite : peu importe
-    # quel graphique est affiche a l'ecran, "evolution du CA par mois" veut
-    # dire la meme chose. Seuls les marqueurs de composition/comparaison
-    # (_COMPOSITE_MARKERS) doivent desactiver ce routage.
     det_tool = _try_deterministic_route(message)
     if det_tool:
         yield {"event": "status", "message": status_labels["tool_call"].format(label=_TOOL_LABELS.get(det_tool, det_tool))}
         result = call_tool_safely(det_tool, {})
         print(f"⚡ [deterministe] {det_tool}() → {result}")
         if isinstance(result, dict) and "error" in result:
-            reply = (f"Une erreur est survenue en récupérant cette information ({det_tool})."
-                     if lang == "fr" else f"An error occurred retrieving this information ({det_tool}).")
+            reply = str(result["error"])
         else:
             try:
                 reply = templates[det_tool](result)
@@ -503,9 +522,23 @@ def _run_agent_events(user_message, chart_context, history, max_iterations):
             role = "user" if turn.get("role") == "user" else "assistant"
             content = turn.get("content", "")
             if content:
-                messages.append({"role": role, "content": content})
+                messages.append({"role": role, "content": _truncate_for_history(content)})
     if has_context:
         messages.append({"role": "system", "content": _build_context_message(chart_context, lang)})
+
+    month_hint = _detect_month_year_hint(message)
+    if month_hint:
+        hint_text = (
+            f"(Indice calcule automatiquement, pas une instruction : si tu utilises un outil de "
+            f"prevision, le mois mentionne dans la question correspond a target_month='{month_hint}'. "
+            f"Tu restes libre de l'utiliser ou non selon la question.)"
+            if lang == "fr" else
+            f"(Auto-computed hint, not an instruction: if you use a forecasting tool, the month "
+            f"mentioned in the question corresponds to target_month='{month_hint}'. Use it or not "
+            f"based on the actual question.)"
+        )
+        messages.append({"role": "system", "content": hint_text})
+
     messages.append({"role": "user", "content": message})
 
     facts = []
@@ -585,7 +618,13 @@ def _run_agent_events(user_message, chart_context, history, max_iterations):
             elif isinstance(result, dict) and "clarification_needed" in result:
                 facts.append(result["clarification_needed"])
             elif isinstance(result, dict) and "error" in result:
-                facts.append(f"Une erreur est survenue en récupérant cette information ({fn_name}).")
+                # BUG CORRIGE ICI : le message d'erreur precis (ex: "target_month
+                # trop eloigne : 17 mois d'ecart, maximum supporte = 6") etait
+                # calcule puis jete au profit d'un texte generique inutile.
+                # Tous les messages d'erreur de ce projet sont deja rediges a la
+                # main pour etre lisibles (validations metier), pas des
+                # tracebacks bruts -- on peut donc les afficher directement.
+                facts.append(str(result["error"]))
             elif fn_name in RAG_TOOLS:
                 need_rag_synthesis = True
                 reviews = result.get("retrieved_reviews") or result.get("reviews", [])

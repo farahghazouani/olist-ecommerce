@@ -27,6 +27,10 @@ def create_app():
     app.register_blueprint(ml_bp, url_prefix="/api/ml")
     app.register_blueprint(chat_bp, url_prefix="/api/chat")
 
+    @app.errorhandler(400)
+    def bad_request(e):
+        return jsonify({"detail": getattr(e, "description", "Bad request")}), 400
+
     @app.errorhandler(404)
     def not_found(e):
         return jsonify({"detail": getattr(e, "description", "Not found")}), 404

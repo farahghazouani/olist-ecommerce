@@ -123,13 +123,27 @@ def get_customer_segments():
         return {"error": f"Impossible de contacter l'API clients : {e}"}
 
 
-def forecast_category_revenue(category: str, state: str = None):
-    """Prevision de CA pour une categorie (et optionnellement un etat)."""
+def forecast_category_revenue(category: str, state: str = None, target_month: str = None):
+    """Prevision de CA pour une categorie (et optionnellement un etat et un
+    mois cible). Sans target_month, prevoit UNIQUEMENT le mois suivant les
+    dernieres donnees connues -- avec target_month (format 'YYYY-MM'), une
+    prevision RECURSIVE (mois par mois, incertitude croissante avec
+    l'horizon) est faite jusqu'a ce mois. Plafonnee cote API a 6 mois
+    d'ecart max."""
     try:
         params = {"category": category}
         if state:
             params["state"] = state
-        return _cached_get(f"{BASE_URL}/api/ml/forecast/by-category", params)
+        if target_month:
+            params["target_month"] = target_month
+        result = _cached_get(f"{BASE_URL}/api/ml/forecast/by-category", params)
+        # Flask abort() renvoie {"detail": "..."} sur une erreur HTTP (400,
+        # 404...) -- _cached_get ne verifie pas le code de statut, donc on
+        # normalise ici pour que agent.py le traite comme une vraie erreur
+        # au lieu d'essayer (et d'echouer) de le passer dans un template.
+        if isinstance(result, dict) and "detail" in result and "predicted_revenue_total" not in result:
+            return {"error": result["detail"]}
+        return result
     except Exception as e:
         return {"error": f"Impossible de contacter l'API ML : {e}"}
 
@@ -244,7 +258,7 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "get_kpi_summary",
-            "description": "Recupere les indicateurs cles globaux : nombre total de commandes, chiffre d'affaires total, panier moyen.",
+            "description": "Indicateurs cles globaux : commandes, CA total, panier moyen.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -252,12 +266,7 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "get_revenue_by_month",
-            "description": (
-                "Recupere l'evolution mensuelle COMPLETE du chiffre d'affaires (toute la serie, "
-                "aucun parametre, utile pour tendance/evolution generale). Si l'utilisateur demande "
-                "une PERIODE PRECISE (une semaine ou un mois donne), utilise get_revenue_for_period "
-                "a la place, PAS cet outil."
-            ),
+            "description": "Evolution mensuelle COMPLETE du CA (serie entiere). Pour un mois/semaine precis -> get_revenue_for_period.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -266,19 +275,14 @@ TOOLS_SPEC = [
         "function": {
             "name": "get_revenue_for_period",
             "description": (
-                "Recupere le CA REEL sur UNE PERIODE PRECISE : une semaine OU un mois. Fournis "
-                "UN SEUL des deux parametres selon la formulation de l'utilisateur : 'weeks_ago' "
-                "pour une semaine en remontant depuis la derniere connue (0 = derniere semaine, "
-                "1 = celle d'avant, 'il y a N semaines' -> weeks_ago=N), OU 'month' pour un mois "
-                "precis au format 'YYYY-MM' (ex: 'fevrier 2017' -> month='2017-02'). Ne fournis "
-                "JAMAIS les deux a la fois. Pour la serie complete sans filtre -> "
-                "get_revenue_by_month."
+                "CA reel sur UNE periode precise : 'weeks_ago' (0=derniere semaine, 1=celle d'avant) "
+                "OU 'month' (format 'YYYY-MM'). Un seul des deux, jamais les deux."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "weeks_ago": {"type": "integer", "description": "0 = derniere semaine connue, 1 = celle d'avant, etc."},
-                    "month": {"type": "string", "description": "Format YYYY-MM, ex: '2017-02' pour fevrier 2017"},
+                    "weeks_ago": {"type": "integer", "description": "0=derniere semaine, 1=celle d'avant, etc."},
+                    "month": {"type": "string", "description": "Format YYYY-MM"},
                 },
                 "required": [],
             },
@@ -288,10 +292,10 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "get_top_categories",
-            "description": "Recupere les categories de produits les plus vendues en chiffre d'affaires.",
+            "description": "Categories de produits les plus vendues en CA.",
             "parameters": {
                 "type": "object",
-                "properties": {"limit": {"type": "integer", "description": "Nombre de categories a retourner"}},
+                "properties": {"limit": {"type": "integer", "description": "Nombre a retourner"}},
                 "required": [],
             },
         },
@@ -301,15 +305,16 @@ TOOLS_SPEC = [
         "function": {
             "name": "forecast_category_revenue",
             "description": (
-                "Prevision de CA pour une categorie de produit. 'category' doit reprendre "
-                "le terme tel que l'utilisateur l'a formule (NE PAS le traduire/reformuler "
-                "en un slug precis que tu devines). 'state' est OPTIONNEL."
+                "Prevision de CA. 'category' = terme exact de l'utilisateur (jamais traduit). "
+                "'state' optionnel. 'target_month' (format 'YYYY-MM') si un mois cible est precise -- "
+                "sans lui, prevoit seulement le mois suivant les dernieres donnees connues."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "category": {"type": "string", "description": "Categorie telle que formulee par l'utilisateur"},
-                    "state": {"type": "string", "description": "Code etat client optionnel, ex: 'SP'"},
+                    "state": {"type": "string", "description": "Code etat optionnel, ex: 'SP'"},
+                    "target_month": {"type": "string", "description": "Mois cible optionnel, format 'YYYY-MM'"},
                 },
                 "required": ["category"],
             },
@@ -320,17 +325,14 @@ TOOLS_SPEC = [
         "function": {
             "name": "predict_delivery_risk",
             "description": (
-                "Estime le risque de retard de livraison d'une commande hypothetique. "
-                "SEULS category, customer_state et order_month sont necessaires : appelle "
-                "cet outil avec UNIQUEMENT ces 3 infos meme si l'utilisateur n'a precise "
-                "ni prix, ni poids, ni nombre d'articles -- des valeurs de reference sont "
-                "utilisees automatiquement. Ne refuse JAMAIS cet outil pour cette raison."
+                "Risque de retard de livraison. SEULS category/customer_state/order_month "
+                "necessaires -- jamais refuser pour prix/poids/etc. manquants, valeurs par defaut utilisees."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "category": {"type": "string", "description": "Categorie telle que formulee par l'utilisateur"},
-                    "customer_state": {"type": "string", "description": "Code etat client, ex: 'SP'"},
+                    "customer_state": {"type": "string", "description": "Code etat, ex: 'SP'"},
                     "order_month": {"type": "integer", "description": "Mois 1-12"},
                 },
                 "required": ["category", "customer_state", "order_month"],
@@ -341,7 +343,7 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "get_customer_segments",
-            "description": "Recupere les segments clients (Champions, Dormants, etc.) avec leur taille et profil.",
+            "description": "Segments clients existants (Champions, Dormants...) avec taille et profil.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -350,11 +352,8 @@ TOOLS_SPEC = [
         "function": {
             "name": "predict_customer_segment",
             "description": (
-                "Predit EN DIRECT a quel segment RFM/KMeans appartiendrait un client "
-                "hypothetique, a partir de sa recence (jours), sa frequence (nb commandes) "
-                "et son montant total depense. Les 3 parametres sont necessaires. Utilise "
-                "pour un scenario 'et si un client avait tel profil ?', pas pour un client "
-                "deja connu (utiliser get_customer_segments)."
+                "Predit le segment d'un client HYPOTHETIQUE (scenario 'et si'), a partir de "
+                "recency/frequency/monetary. Pour un client deja connu -> get_customer_segments."
             ),
             "parameters": {
                 "type": "object",
@@ -371,12 +370,12 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "search_reviews",
-            "description": "Recherche generale dans les avis clients (positifs, negatifs ou neutres).",
+            "description": "Recherche generale dans les avis clients.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Termes de recherche dans les avis"},
-                    "category": {"type": "string", "description": "Filtre optionnel par categorie de produit"},
+                    "query": {"type": "string", "description": "Termes de recherche"},
+                    "category": {"type": "string", "description": "Filtre optionnel par categorie"},
                 },
                 "required": ["query"],
             },
@@ -386,11 +385,7 @@ TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "explain_category_complaints",
-            "description": (
-                "Explique pourquoi une categorie a un taux d'avis negatifs eleve, en citant "
-                "les motifs recurrents. Utilise quand l'utilisateur demande POURQUOI une "
-                "categorie est mal notee ou se plaint (pas pour un avis general -> search_reviews)."
-            ),
+            "description": "Pourquoi une categorie a un taux d'avis negatifs eleve (motifs recurrents). Pas pour un avis general -> search_reviews.",
             "parameters": {
                 "type": "object",
                 "properties": {"category": {"type": "string"}},
