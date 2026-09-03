@@ -1,8 +1,6 @@
 """
 Teste tous les endpoints du backend contre le VRAI serveur (localhost:8000),
-avec tes vraies donnees MongoDB. Lance ce script PENDANT que `python -m app.main`
-tourne dans un autre terminal.
-
+avec tes vraies donnees MongoDB.
 Usage :
     pip install requests
     python test_backend_complet.py
@@ -11,7 +9,7 @@ import requests
 
 BASE = "http://localhost:8000/api"
 
-# Payload d'exemple reutilise pour tous les tests lies au retard de livraison
+
 SAMPLE_ORDER = {
     "total_price": 150.0, "total_freight": 25.0, "n_items": 2,
     "n_unique_products": 2, "n_unique_sellers": 1, "pct_same_state": 1.0,
