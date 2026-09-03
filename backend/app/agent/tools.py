@@ -194,7 +194,6 @@ def get_customer_segments():
 
 
 
-
 def get_category_count():
     """Nombre de categories de produits DISTINCTES dans tout le catalogue
     (pas juste le top N affiche par get_top_categories)."""
