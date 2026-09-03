@@ -3,10 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 from app.database import get_db
 
-# Le dataset Olist a une queue tronquee apres cette date (commandes non
-# soldees / arrivees en fin d'export) : on l'exclut partout pour ne pas
-# fausser les taux de retard et de satisfaction, comme le fait deja
-# /revenue-last-week plus bas dans ce fichier.
+
 DATA_CUTOFF = datetime(2018, 9, 1)
 
 kpi_bp = Blueprint("kpi", __name__)
