@@ -193,9 +193,7 @@ def get_customer_segments():
         return {"error": f"Impossible de contacter l'API clients : {e}"}
 
 
-# ---------------------------------------------------------------------------
-# NOUVEAUX OUTILS -- s'appuient sur backend/app/routers/analytics.py.
-# ---------------------------------------------------------------------------
+
 
 def get_category_count():
     """Nombre de categories de produits DISTINCTES dans tout le catalogue
