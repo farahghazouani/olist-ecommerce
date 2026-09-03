@@ -1,7 +1,6 @@
 # backend/app/agent/agent.py
 """
 
-
 PRINCIPE : le choix de l'outil pour N'IMPORTE QUELLE question sur les
 donnees Olist est TOUJOURS decide par un LLM (tool-calling natif Ollama),
 jamais par une regex qui devine une intention. C'est la difference avec les
@@ -27,7 +26,7 @@ doit jamais reformuler un chiffre exact (risque d'hallucination/arrondi),
 il se contente de choisir QUEL chiffre aller chercher. Le LLM garde donc son
 role reel : decider, pas calculer.
 
-
+===============================================================================
 """
 import inspect
 import json
@@ -108,7 +107,6 @@ def _ollama_chat(messages, tools=None, model=ROUTER_MODEL, options=None, keep_al
     if timed_out:
         return None, "timeout"
     return {"message": message}, None
-
 
 
 
@@ -410,10 +408,7 @@ def _build_context_message(chart_context: dict, lang: str) -> str:
     )
 
 
-# ============================================================================
-# INDICE MOIS/ANNEE PRECALCULE -- allege le raisonnement du routeur, PAS
-# une decision d'outil a sa place.
-# ============================================================================
+
 _MONTHS_FR = {
     "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6,
     "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11,
