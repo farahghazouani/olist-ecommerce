@@ -26,19 +26,6 @@ def _build_where(category: str | None, max_score: int | None):
 def search_customer_reviews(
     query: str, n_results: int = 5, category: str | None = None, max_score: int | None = None
 ) -> dict:
-    """Recherche semantique dans ChromaDB, avec filtre optionnel par
-    categorie et/ou note maximale (ex: max_score=2 pour ne cibler que les
-    avis negatifs).
-
-    Retourne {"documents": [...], "category_matched": bool}. Le LLM qui
-    appelle cet outil transmet souvent un nom de categorie approximatif ou
-    traduit (ex: 'meubles' au lieu du vrai slug 'moveis_decoracao') : un
-    filtre 'where' qui ne matche AUCUNE metadonnee renvoie silencieusement
-    une liste vide, indiscernable d'une collection reellement vide. On
-    relache donc le filtre categorie (en gardant max_score) si le premier
-    essai ne renvoie rien, et on signale category_matched=False pour que
-    l'agent ne pretende pas que les avis retrouves portent specifiquement
-    sur la categorie demandee."""
     try:
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = client.get_collection(name="olist_reviews", embedding_function=embedding_fn)

@@ -34,8 +34,38 @@ un CPU contraint (~39 tokens/s de lecture mesures), un prompt fixe de 2000+
 tokens peut a lui seul consommer 50+ secondes -- avant tout raisonnement.
 Ce fichier doit rester CONCIS : ajouter une regle ou un exemple ici a un
 cout en LATENCE GLOBALE, sur CHAQUE question, pas seulement sur les cas que
-la regle vise a corriger. Toujours mesurer avant/apres (voir le script de
-mesure utilise dans l'historique de debug) avant d'agrandir ce prompt.
+la regle vise a corriger. Toujours mesurer avant/apres avant d'agrandir ce
+prompt.
+
+===============================================================================
+CORRECTIONS APPLIQUEES DANS CETTE VERSION :
+
+1. TEMPLATES_FR / TEMPLATES_EN pour get_category_count et get_state_count
+   affichent maintenant la LISTE COMPLETE des categories/etats, pas
+   seulement le compte. Avant, "citez les categories" et "combien de
+   categories" tombaient sur le meme outil ET le meme template tronque a
+   juste un nombre -> l'utilisateur ne recevait jamais la liste. Comme le
+   routeur (Qwen 3B) n'a aucun moyen fiable de faire varier le format de
+   sortie cote Python selon la formulation, la solution robuste est
+   d'afficher systematiquement le detail : ca repond aux deux formulations
+   sans dependre d'une nuance que le petit modele ne peut pas garantir.
+
+2. SYSTEM_PROMPT : ajout d'une regle 12 + d'un exemple explicite "top
+   acheteurs" -> get_top_customers() vs "top vendeurs" -> get_top_sellers(),
+   avec le mot "acheteur" tel quel (celui qui posait probleme en prod). Un
+   exemple few-shot avec le mot exact qui a cause l'erreur est bien plus
+   efficace qu'une reformulation generique de la regle.
+
+   IMPORTANT : pour que ce point soit vraiment corrige, les descriptions de
+   get_top_customers/get_top_sellers dans TOOLS_SPEC (fichier tools.py, PAS
+   ce fichier) doivent AUSSI mentionner les synonymes "acheteur"/"buyer"/
+   "costumer" vs "vendeur"/"seller" -- a modifier separement dans tools.py.
+
+Le bug "CA d'un etat plafonne au top 10" N'EST PAS dans ce fichier : il est
+dans tools.py (get_revenue_for_state tape sur un endpoint plafonne/duplique)
+et necessite un nouvel endpoint /api/analytics/states/revenue cote
+routers/analytics.py. Rien a changer ici pour ce bug-la.
+===============================================================================
 """
 import inspect
 import json
@@ -119,11 +149,8 @@ def _ollama_chat(messages, tools=None, model=ROUTER_MODEL, options=None, keep_al
 
 
 # ============================================================================
-# SYSTEM_PROMPT -- CONDENSE DELIBEREMENT. Une version plus longue a ete
-# testee (12 regles detaillees + 7 exemples multi-lignes) : elle n'a
-# apporte aucun gain de fiabilite mesurable et a fait remonter le temps de
-# lecture fixe pres du niveau d'avant optimisation. Toute regle ajoutee ici
-# doit se justifier par un cas reel observe, en 1 ligne si possible.
+# SYSTEM_PROMPT -- CONDENSE DELIBEREMENT (voir rappel dans la docstring).
+# CORRECTION : regle 12 + exemple "top acheteurs" ajoutes (voir en-tete).
 # ============================================================================
 SYSTEM_PROMPT = """Assistant BI e-commerce (Olist). Règles :
 1. Question sur des données/chiffres -> utilise le(s) outil(s) approprié(s). Plusieurs demandes distinctes -> un appel par demande, même réponse.
@@ -134,11 +161,12 @@ SYSTEM_PROMPT = """Assistant BI e-commerce (Olist). Règles :
 6. Vérifie d'abord l'historique et le contexte de graphique fourni -- utilise-le SEULEMENT s'il répond vraiment à la question posée. S'il ne répond pas à la question (autre sujet, autre métrique), IGNORE-le et appelle l'outil approprié.
 7. Ne traduis jamais un nom de catégorie donné par l'utilisateur.
 8. Un code d'État brésilien (SP, RJ...) n'est jamais une catégorie.
-9. Si un seul paramètre diffère d'une question précédente (catégorie, état, mois, montant...), rappelle l'outil avec les nouvelles valeurs -- ne recopie jamais un résultat pour des paramètres différents.
+9. Si la question porte sur un sujet, une catégorie, un état, un mois ou un montant DIFFÉRENT d'une question précédente -- même si le type de question se ressemble -- rappelle l'outil correspondant avec les nouvelles valeurs. Ne recopie JAMAIS un résultat déjà donné pour un sujet différent (ex: le CA d'une catégorie n'est pas le CA d'un état).
 10. Un mot comme "prévision/prévois/forecast" -> forecast_category_revenue. Si un mois ET une année sont mentionnés (ex: septembre 2018), passe-les en target_month au format YYYY-MM.
 11. Ne mentionne JAMAIS un nom d'outil, ni ton raisonnement sur quel outil utiliser, dans ta réponse à l'utilisateur -- décide en silence, puis réponds directement avec le résultat ou l'explication, jamais en décrivant le processus.
+12. "Acheteur"/"client"/"costumer"/"buyer" désignent TOUJOURS le client (get_top_customers) ; "vendeur"/"seller" désigne TOUJOURS le vendeur (get_top_sellers) -- ne jamais confondre les deux.
 
-Exemples : "risque retard meubles SP novembre" -> predict_delivery_risk(category="meubles", customer_state="SP", order_month=11) ; "pourquoi meubles mal notée" -> explain_category_complaints(category="meubles") ; "CA février 2017" -> get_revenue_for_period(month="2017-02") ; "prévision beleza_saude pour décembre 2018" -> forecast_category_revenue(category="beleza_saude", target_month="2018-12") ; "segment client 5 commandes 2000 R$" -> predict_customer_segment(recency=0, frequency=5, monetary=2000).
+Exemples : "risque retard meubles SP novembre" -> predict_delivery_risk(category="meubles", customer_state="SP", order_month=11) ; "pourquoi meubles mal notée" -> explain_category_complaints(category="meubles") ; "CA février 2017" -> get_revenue_for_period(month="2017-02") ; "prévision beleza_saude pour décembre 2018" -> forecast_category_revenue(category="beleza_saude", target_month="2018-12") ; "segment client 5 commandes 2000 R$" -> predict_customer_segment(recency=0, frequency=5, monetary=2000) ; "combien de catégories" -> get_category_count() ; "top vendeurs à SP" -> get_top_sellers(state="SP") ; "top acheteurs" -> get_top_customers() ; "top vendeurs" -> get_top_sellers().
 """
 
 
@@ -204,6 +232,12 @@ def _format_forecast(r: dict, lang: str) -> str:
     return base
 
 
+# ============================================================================
+# TEMPLATES_FR / TEMPLATES_EN
+# CORRECTION : get_category_count et get_state_count affichent maintenant
+# la liste complete (triee), pas seulement le nombre -- voir explication en
+# en-tete de fichier, point 1.
+# ============================================================================
 TEMPLATES_FR = {
     "get_kpi_summary": lambda r: (
         f"Le chiffre d'affaires total est de {r['total_revenue']:,.2f} R$ "
@@ -218,6 +252,40 @@ TEMPLATES_FR = {
     "get_revenue_by_month": lambda r: _format_revenue_by_month(r, "fr"),
     "get_top_categories": lambda r: (
         "Voici le classement : " + "; ".join(f"{i+1}. {c['category']} ({c['revenue']:,.2f} R$)" for i, c in enumerate(r))
+    ),
+    "get_revenue_for_category": lambda r: (
+        f"Le chiffre d'affaires TOTAL (toute la période disponible, sept. 2016 – août 2018, "
+        f"pas un découpage mensuel) de la catégorie **{r['category']}** est de {r['revenue']:,.2f} R$."
+    ),
+    "get_revenue_for_state": lambda r: (
+        f"Le chiffre d'affaires TOTAL (toute la période disponible) pour l'état **{r['state']}** "
+        f"est de {r['revenue']:,.2f} R$."
+    ),
+    "get_category_count": lambda r: (
+        f"Il y a **{r['count']}** catégories de produits distinctes : "
+        + ", ".join(sorted(r["categories"])) + "."
+    ),
+    "get_state_count": lambda r: (
+        f"Il y a **{r['count']}** États clients distincts : "
+        + ", ".join(sorted(r["states"])) + "."
+    ),
+    "get_category_averages": lambda r: (
+        f"Caractéristiques moyennes de la catégorie **{r['category']}** ({r['n_orders']:,} commandes) : "
+        f"prix moyen {r['avg_price']:,.2f} R$, frais de port moyen {r['avg_freight']:,.2f} R$, "
+        f"délai de livraison moyen {r['avg_delivery_delay_days']:+.1f} j (négatif = livré en avance), "
+        f"note moyenne {r['avg_review_score']:.2f}/5, {r['pct_late']:.1f}% de commandes en retard."
+    ),
+    "get_top_sellers": lambda r: (
+        "Top vendeurs par CA : " + "; ".join(
+            f"{i+1}. {s['seller_id'][:8]}… ({s['revenue']:,.2f} R$, {s.get('seller_state', '?')})"
+            for i, s in enumerate(r)
+        )
+    ),
+    "get_top_customers": lambda r: (
+        "Top clients par montant dépensé : " + "; ".join(
+            f"{i+1}. {c['customer_id'][:8]}… ({c['total_spent']:,.2f} R$, {c.get('customer_state', '?')})"
+            for i, c in enumerate(r)
+        )
     ),
     "forecast_category_revenue": lambda r: _format_forecast(r, "fr"),
     "predict_delivery_risk": lambda r: (
@@ -245,6 +313,39 @@ TEMPLATES_EN = {
     "get_revenue_by_month": lambda r: _format_revenue_by_month(r, "en"),
     "get_top_categories": lambda r: (
         "Top categories: " + "; ".join(f"{i+1}. {c['category']} ({c['revenue']:,.2f} R$)" for i, c in enumerate(r))
+    ),
+    "get_revenue_for_category": lambda r: (
+        f"TOTAL revenue (full available period, Sept 2016 – Aug 2018, not a monthly breakdown) "
+        f"for category **{r['category']}** is {r['revenue']:,.2f} R$."
+    ),
+    "get_revenue_for_state": lambda r: (
+        f"TOTAL revenue (full available period) for state **{r['state']}** is {r['revenue']:,.2f} R$."
+    ),
+    "get_category_count": lambda r: (
+        f"There are **{r['count']}** distinct product categories: "
+        + ", ".join(sorted(r["categories"])) + "."
+    ),
+    "get_state_count": lambda r: (
+        f"There are **{r['count']}** distinct customer states: "
+        + ", ".join(sorted(r["states"])) + "."
+    ),
+    "get_category_averages": lambda r: (
+        f"Average characteristics for category **{r['category']}** ({r['n_orders']:,} orders): "
+        f"avg price {r['avg_price']:,.2f} R$, avg freight {r['avg_freight']:,.2f} R$, "
+        f"avg delivery delay {r['avg_delivery_delay_days']:+.1f} days (negative = delivered early), "
+        f"avg review score {r['avg_review_score']:.2f}/5, {r['pct_late']:.1f}% of orders late."
+    ),
+    "get_top_sellers": lambda r: (
+        "Top sellers by revenue: " + "; ".join(
+            f"{i+1}. {s['seller_id'][:8]}… ({s['revenue']:,.2f} R$, {s.get('seller_state', '?')})"
+            for i, s in enumerate(r)
+        )
+    ),
+    "get_top_customers": lambda r: (
+        "Top customers by amount spent: " + "; ".join(
+            f"{i+1}. {c['customer_id'][:8]}… ({c['total_spent']:,.2f} R$, {c.get('customer_state', '?')})"
+            for i, c in enumerate(r)
+        )
     ),
     "forecast_category_revenue": lambda r: _format_forecast(r, "en"),
     "predict_delivery_risk": lambda r: (
@@ -403,7 +504,12 @@ _STATUS_EN = {
 _TOOL_LABELS = {
     "get_kpi_summary": "indicateurs clés", "get_revenue_for_period": "CA sur une période",
     "get_revenue_by_month": "évolution mensuelle du CA",
-    "get_top_categories": "top catégories", "forecast_category_revenue": "prévision de CA",
+    "get_top_categories": "top catégories", "get_revenue_for_category": "CA d'une catégorie",
+    "get_revenue_for_state": "CA d'un état",
+    "get_category_count": "nombre de catégories", "get_state_count": "nombre d'états",
+    "get_category_averages": "moyennes d'une catégorie",
+    "get_top_sellers": "top vendeurs", "get_top_customers": "top clients",
+    "forecast_category_revenue": "prévision de CA",
     "predict_delivery_risk": "risque de retard", "get_customer_segments": "segments clients",
     "predict_customer_segment": "segment client", "search_reviews": "avis clients",
     "explain_category_complaints": "analyse des avis négatifs",
@@ -427,6 +533,10 @@ _ZERO_ARG_PATTERNS = [
      "get_revenue_by_month"),
     (re.compile(r"segments? client|customer segment", re.I),
      "get_customer_segments"),
+    (re.compile(r"combien\s+(?:de\s+)?cat[ée]gories|nombre\s+de\s+cat[ée]gories|how many categories", re.I),
+     "get_category_count"),
+    (re.compile(r"combien\s+(?:d'|de\s+)?[ée]tats|nombre\s+d'[ée]tats|how many states", re.I),
+     "get_state_count"),
 ]
 _stale_zero_arg = {tool for _, tool in _ZERO_ARG_PATTERNS} - _ZERO_ARG_TOOLS
 if _stale_zero_arg:
@@ -449,6 +559,27 @@ def _try_deterministic_route(message: str):
     if _TOP_CATEGORIES_PATTERN.search(message) and not _HAS_NUMBER.search(message):
         return "get_top_categories"
     return None
+
+
+# ============================================================================
+# REPONSE FIXE POUR LES QUESTIONS SUR L'IDENTITE DU SYSTEME.
+# ============================================================================
+_IDENTITY_QUESTION_PATTERN = re.compile(
+    r"quel\s+(?:llm|mod[èe]le)\s+(?:utilises|utilise|tu utilises)|"
+    r"which\s+(?:llm|model)\s+(?:do you use|are you)|what\s+(?:llm|model)\s+(?:are you|is this)",
+    re.I,
+)
+
+_IDENTITY_ANSWER_FR = (
+    "Je suis un assistant BI construit sur un modèle de langage local (Qwen 2.5, 3B, via Ollama) "
+    "pour choisir les outils et extraire les paramètres de tes questions -- pas Claude ni un autre "
+    "modèle propriétaire. Un modèle local sert aussi à synthétiser les avis clients trouvés."
+)
+_IDENTITY_ANSWER_EN = (
+    "I'm a BI assistant built on a local language model (Qwen 2.5, 3B, via Ollama) that chooses "
+    "tools and extracts parameters from your questions -- not Claude or another proprietary model. "
+    "A local model also synthesizes customer reviews it retrieves."
+)
 
 
 def run_agent(user_message, chart_context=None, history=None, max_iterations=3) -> str:
@@ -499,6 +630,11 @@ def _run_agent_events(user_message, chart_context, history, max_iterations):
             if lang == "en" else
             "Peux-tu préciser ta question ? Je peux t'aider sur les ventes, les prévisions ou les avis clients."
         ), "elapsed": round(time.time() - t0, 2)}
+        return
+
+    if _IDENTITY_QUESTION_PATTERN.search(message):
+        yield {"event": "final", "reply": _IDENTITY_ANSWER_EN if lang == "en" else _IDENTITY_ANSWER_FR,
+               "elapsed": round(time.time() - t0, 2)}
         return
 
     det_tool = _try_deterministic_route(message)
@@ -618,12 +754,6 @@ def _run_agent_events(user_message, chart_context, history, max_iterations):
             elif isinstance(result, dict) and "clarification_needed" in result:
                 facts.append(result["clarification_needed"])
             elif isinstance(result, dict) and "error" in result:
-                # BUG CORRIGE ICI : le message d'erreur precis (ex: "target_month
-                # trop eloigne : 17 mois d'ecart, maximum supporte = 6") etait
-                # calcule puis jete au profit d'un texte generique inutile.
-                # Tous les messages d'erreur de ce projet sont deja rediges a la
-                # main pour etre lisibles (validations metier), pas des
-                # tracebacks bruts -- on peut donc les afficher directement.
                 facts.append(str(result["error"]))
             elif fn_name in RAG_TOOLS:
                 need_rag_synthesis = True

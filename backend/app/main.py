@@ -8,6 +8,7 @@ from app.routers.chat import chat_bp
 from app.routers.products import products_bp
 from app.routers.customers import customers_bp
 from app.routers.sales import sales_bp
+from app.routers.analytics import analytics_bp
 
 
 def create_app():
@@ -26,6 +27,7 @@ def create_app():
     #pour lesmodules ml a inclure par la suite desqu'ils seront prets 
     app.register_blueprint(ml_bp, url_prefix="/api/ml")
     app.register_blueprint(chat_bp, url_prefix="/api/chat")
+    app.register_blueprint(analytics_bp, url_prefix="/api/analytics")
 
     @app.errorhandler(400)
     def bad_request(e):
@@ -53,13 +55,7 @@ def create_app():
 
 
 def _warm_up_ollama_models():
-    """Precharge ROUTER_MODEL et SYNTHESIS_MODEL en memoire des le demarrage
-    du serveur, dans un thread separe (ne bloque pas le lancement de
-    Flask). Sans ca, la PREMIERE question de chaque utilisateur (ou apres
-    chaque redemarrage en dev) paie le cout du chargement du modele en RAM
-    en plus du temps d'inference -- ce qui peut a lui seul depasser le
-    timeout et ressembler a une panne, alors que le modele n'est simplement
-    pas encore charge."""
+    
     import threading
     import requests as _requests
     from app.agent.agent import OLLAMA_HOST, ROUTER_MODEL, SYNTHESIS_MODEL, KEEP_ALIVE

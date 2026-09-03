@@ -28,11 +28,6 @@ def safe_load(filename: str):
     return None
 
 
-# Prefere le modele CALIBRE (probabilites fiables, cf. section "calibration"
-# du notebook) ; si le fichier n'existe pas encore (pas re-exporte depuis
-# Colab), on retombe sur le modele brut pour ne pas casser l'API, mais ses
-# probabilites seront alors a interpreter comme un score relatif, pas un
-# vrai pourcentage de risque (cf. rapport).
 delay_model = safe_load("model_delivery_delay_calibrated.pkl")
 delay_model_is_calibrated = delay_model is not None
 if delay_model is None:
@@ -55,8 +50,6 @@ _category_state_share = None
 
 
 def _load_category_forecast_data():
-    """Charge les 2 CSV une seule fois en memoire (meme pattern que
-    _load_segments dans customers.py)."""
     global _category_last_known, _category_state_share
     if _category_last_known is None:
         path1 = DATA_EXPORTS_DIR / "category_monthly_last_known.csv"
@@ -84,8 +77,6 @@ class DelayRiskRequest(BaseModel):
 
 
 def _safe_encode(encoder, value: str) -> int:
-    """Categorie/etat absent du jeu d'entrainement -> fallback code 0 au lieu
-    de planter (LabelEncoder leve une ValueError sur une valeur inconnue)."""
     try:
         return int(encoder.transform([value])[0])
     except ValueError:
@@ -93,16 +84,6 @@ def _safe_encode(encoder, value: str) -> int:
 
 
 def _get_top_factors(model, feature_cols, top_n=3):
-    """Extrait les facteurs les plus importants, que le modele soit un
-    ensemble d'arbres direct (feature_importances_ dispo nativement) OU un
-    CalibratedClassifierCV (qui enveloppe l'estimateur reel dans
-    calibrated_classifiers_[i].estimator -- .estimator depuis sklearn
-    >=1.4, .base_estimator dans les versions plus anciennes). BUG CORRIGE
-    ICI : le code precedent appelait model.feature_importances_
-    directement, qui n'existe pas sur le wrapper de calibration -> 500.
-    Ne plante JAMAIS l'endpoint pour cette metrique secondaire : en dernier
-    recours, retourne une liste vide plutot que de faire echouer toute la
-    prediction de risque (qui, elle, reste valide)."""
     try:
         if hasattr(model, "feature_importances_"):
             base = model
@@ -123,8 +104,6 @@ def _get_top_factors(model, feature_cols, top_n=3):
 
 @ml_bp.post("/predict/delay-risk")
 def predict_delay_risk():
-    """Probabilite de retard AVANT expedition, pour flaguer une commande a
-    risque des sa creation (au lieu de seulement constater le retard apres)."""
     if delay_model is None or le_category is None or le_state is None or delay_feature_cols is None:
         abort(500, description="Le modele de retard n'est pas charge.")
 
@@ -164,39 +143,19 @@ def predict_delay_risk():
 
 @ml_bp.get("/forecast/categories")
 def list_forecast_categories():
-    """Liste des categories utilisables (pour peupler un filtre/dropdown cote frontend)."""
     if le_category_forecast is None:
         abort(500, description="Le modele de prevision par categorie n'est pas charge.")
     return jsonify(sorted(le_category_forecast.classes_.tolist()))
 
 
-MAX_FORECAST_MONTHS_AHEAD = 6  # plafond raisonnable : au-dela, l'extrapolation
-                               # recursive accumule trop d'incertitude pour
-                               # etre presentee comme fiable.
+MAX_FORECAST_MONTHS_AHEAD = 6
 
 
 @ml_bp.get("/forecast/by-category")
 def forecast_by_category():
-    """Prevision du CA pour une categorie (et optionnellement sa part pour
-    un etat donne), via l'approche top-down : croissance predite x dernier
-    CA connu, puis repartition par la part historique de l'etat.
-
-    BUG CORRIGE ICI : la version precedente ne pouvait prevoir QUE le mois
-    immediatement suivant le dernier mois connu (aout 2018 -> septembre
-    2018 systematiquement), sans aucun moyen de cibler un mois plus
-    eloigner (ex: octobre, decembre) -- une demande "prevision pour
-    decembre" retournait silencieusement la prevision de septembre, sans
-    prevenir l'utilisateur du decalage. Desormais, un parametre optionnel
-    'target_month' (format 'YYYY-MM') declenche une PREVISION RECURSIVE :
-    le modele applique sa prediction mois par mois, en chainant chaque
-    prevision comme entree (lag) du mois suivant, jusqu'a atteindre le mois
-    cible. Plafonne a MAX_FORECAST_MONTHS_AHEAD pour eviter une
-    extrapolation incontrolee, avec le nombre de mois recursifs retourne
-    explicitement (le tool cote agent doit avertir l'utilisateur que
-    l'incertitude augmente avec l'horizon)."""
     category = request.args.get("category")
     state = request.args.get("state")
-    target_month = request.args.get("target_month")  # format 'YYYY-MM', optionnel
+    target_month = request.args.get("target_month")
     if not category:
         abort(400, description="Le parametre 'category' est requis.")
 
@@ -223,14 +182,6 @@ def forecast_by_category():
     last_known_month = pd.Timestamp(r["month"])
     category_enc = int(le_category_forecast.transform([grouped_category])[0])
 
-    # Determine le nombre de mois a projeter recursivement.
-    # BUG CORRIGE ICI : pd.Timestamp(f"{target_month}-01") ne leve PAS
-    # d'exception sur une entree deja invalide-mais-plausible comme
-    # '2018-01-24' (pandas la reinterprete silencieusement en
-    # '2018-01-24 01:00:00' au lieu de rejeter le format) -- le
-    # except (ValueError, TypeError) ne se declenchait donc jamais pour ce
-    # cas, laissant passer un mois errone sans avertir personne. On valide
-    # maintenant le format EXACT par regex avant tout parsing.
     months_ahead = 1
     if target_month:
         if not re.fullmatch(r"\d{4}-\d{2}", target_month):
@@ -254,9 +205,6 @@ def forecast_by_category():
                 f"{MAX_FORECAST_MONTHS_AHEAD} (au-dela, la prevision recursive n'est plus fiable)."
             ))
 
-    # Boucle recursive : chaque iteration re-applique le modele en utilisant
-    # la prevision precedente comme nouveau lag1 (et l'ancien lag1 devient
-    # lag2), exactement comme le ferait une vraie prevision mois par mois.
     lag1 = float(r["revenue"])
     lag2 = float(r["revenue_lag1"])
     roll3_history = [float(r["revenue_lag2"]), lag2, lag1]
@@ -314,11 +262,6 @@ class DelayBatchMonteCarloRequest(BaseModel):
 
 @ml_bp.post("/predict/delay-batch-montecarlo")
 def delay_batch_montecarlo():
-    """Simulation de Monte Carlo (Section 7, notebook) : combien de retards
-    attendre sur un LOT de commandes, avec un intervalle de confiance P10-P90 --
-    plutot qu'une seule probabilite par commande. Le lot est fourni par
-    l'appelant (ex: commandes du jour a expedier), pas re-derive de Mongo,
-    pour rester exactement coherent avec la logique de /predict/delay-risk."""
     if delay_model is None or le_category is None or le_state is None or delay_feature_cols is None:
         abort(500, description="Le modele de retard n'est pas charge.")
     if not delay_model_is_calibrated:
@@ -350,8 +293,6 @@ def delay_batch_montecarlo():
     probs = delay_model.predict_proba(X)[:, 1]
 
     n_sim = min(max(payload.n_simulations, 1000), 20000)
-    # Tirage de Bernoulli independant par commande, repete n_sim fois
-    # (une ligne = une simulation complete du lot).
     simulated = np.random.binomial(1, probs, size=(n_sim, len(probs))).sum(axis=1)
     p10, median, p90 = (int(v) for v in np.percentile(simulated, [10, 50, 90]))
 

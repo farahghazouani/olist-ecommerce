@@ -97,7 +97,7 @@ export default function CustomersPage() {
                 </BarChart>
               </ResponsiveContainer>
               <ChartExplainer>
-                Où sont concentrés tes clients.
+                Où sont les clients concentrés.
               </ChartExplainer>
             </section>
           </div>

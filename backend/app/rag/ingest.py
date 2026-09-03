@@ -12,13 +12,6 @@ embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
 
 
 def build_vector_store(limit: int = 10000):
-    """Extrait les vrais commentaires textuels de MongoDB et les indexe
-    dans ChromaDB, AVEC la categorie et la note en metadonnees -- ce qui
-    permet de filtrer les avis par categorie (ex: pourquoi telle categorie
-    a-t-elle un taux d'avis negatifs eleve).
-
-    Le JOIN SQL original (fact_reviews r LEFT JOIN fact_orders o ON
-    r.order_id = o.order_id) devient un $lookup Mongo."""
     print("Connexion a MongoDB pour extraire les vrais avis...")
     db = get_db()
 
