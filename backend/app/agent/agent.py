@@ -1,6 +1,6 @@
 # backend/app/agent/agent.py
 """
-Architecture "routeur LLM" -- lis ceci avant de modifier quoi que ce soit.
+
 
 PRINCIPE : le choix de l'outil pour N'IMPORTE QUELLE question sur les
 donnees Olist est TOUJOURS decide par un LLM (tool-calling natif Ollama),
@@ -27,45 +27,7 @@ doit jamais reformuler un chiffre exact (risque d'hallucination/arrondi),
 il se contente de choisir QUEL chiffre aller chercher. Le LLM garde donc son
 role reel : decider, pas calculer.
 
-RAPPEL CRITIQUE SUR LA TAILLE DU PROMPT (lu au moins 3 fois dans l'historique
-de debug de ce projet) : SYSTEM_PROMPT + TOOLS_SPEC sont envoyes EN ENTIER a
-CHAQUE appel du routeur, avant meme de lire le message de l'utilisateur. Sur
-un CPU contraint (~39 tokens/s de lecture mesures), un prompt fixe de 2000+
-tokens peut a lui seul consommer 50+ secondes -- avant tout raisonnement.
-Ce fichier doit rester CONCIS : ajouter une regle ou un exemple ici a un
-cout en LATENCE GLOBALE, sur CHAQUE question, pas seulement sur les cas que
-la regle vise a corriger. Toujours mesurer avant/apres avant d'agrandir ce
-prompt.
 
-===============================================================================
-CORRECTIONS APPLIQUEES DANS CETTE VERSION :
-
-1. TEMPLATES_FR / TEMPLATES_EN pour get_category_count et get_state_count
-   affichent maintenant la LISTE COMPLETE des categories/etats, pas
-   seulement le compte. Avant, "citez les categories" et "combien de
-   categories" tombaient sur le meme outil ET le meme template tronque a
-   juste un nombre -> l'utilisateur ne recevait jamais la liste. Comme le
-   routeur (Qwen 3B) n'a aucun moyen fiable de faire varier le format de
-   sortie cote Python selon la formulation, la solution robuste est
-   d'afficher systematiquement le detail : ca repond aux deux formulations
-   sans dependre d'une nuance que le petit modele ne peut pas garantir.
-
-2. SYSTEM_PROMPT : ajout d'une regle 12 + d'un exemple explicite "top
-   acheteurs" -> get_top_customers() vs "top vendeurs" -> get_top_sellers(),
-   avec le mot "acheteur" tel quel (celui qui posait probleme en prod). Un
-   exemple few-shot avec le mot exact qui a cause l'erreur est bien plus
-   efficace qu'une reformulation generique de la regle.
-
-   IMPORTANT : pour que ce point soit vraiment corrige, les descriptions de
-   get_top_customers/get_top_sellers dans TOOLS_SPEC (fichier tools.py, PAS
-   ce fichier) doivent AUSSI mentionner les synonymes "acheteur"/"buyer"/
-   "costumer" vs "vendeur"/"seller" -- a modifier separement dans tools.py.
-
-Le bug "CA d'un etat plafonne au top 10" N'EST PAS dans ce fichier : il est
-dans tools.py (get_revenue_for_state tape sur un endpoint plafonne/duplique)
-et necessite un nouvel endpoint /api/analytics/states/revenue cote
-routers/analytics.py. Rien a changer ici pour ce bug-la.
-===============================================================================
 """
 import inspect
 import json
@@ -148,10 +110,8 @@ def _ollama_chat(messages, tools=None, model=ROUTER_MODEL, options=None, keep_al
     return {"message": message}, None
 
 
-# ============================================================================
-# SYSTEM_PROMPT -- CONDENSE DELIBEREMENT (voir rappel dans la docstring).
-# CORRECTION : regle 12 + exemple "top acheteurs" ajoutes (voir en-tete).
-# ============================================================================
+
+
 SYSTEM_PROMPT = """Assistant BI e-commerce (Olist). Règles :
 1. Question sur des données/chiffres -> utilise le(s) outil(s) approprié(s). Plusieurs demandes distinctes -> un appel par demande, même réponse.
 2. Salutation/discussion générale -> réponds normalement, sans outil.
@@ -232,12 +192,7 @@ def _format_forecast(r: dict, lang: str) -> str:
     return base
 
 
-# ============================================================================
-# TEMPLATES_FR / TEMPLATES_EN
-# CORRECTION : get_category_count et get_state_count affichent maintenant
-# la liste complete (triee), pas seulement le nombre -- voir explication en
-# en-tete de fichier, point 1.
-# ============================================================================
+
 TEMPLATES_FR = {
     "get_kpi_summary": lambda r: (
         f"Le chiffre d'affaires total est de {r['total_revenue']:,.2f} R$ "
