@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // ⚠️ Remplacez 8000 par le port réel de votre backend Python/Node
+        target: 'http://localhost:8000', 
         changeOrigin: true,
         secure: false,
       },
