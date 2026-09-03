@@ -11,7 +11,7 @@ from app.database import get_db
 
 ml_bp = Blueprint("ml", __name__)
 
-# Remonter a la racine "ecommerce" (4 niveaux)
+
 BASE_DIR = Path(__file__).resolve().parents[3]
 MODELS_DIR = BASE_DIR / "data_science" / "models"
 
