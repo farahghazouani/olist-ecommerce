@@ -1,10 +1,5 @@
 # backend/app/routers/analytics.py
-"""
-Nouvelles routes analytiques -- ecrites directement a partir des documents
-Mongo reels fournis (collections fact_orders et fact_order_items). Si ton
-module de connexion Mongo n'est pas exactement `from app.database import
-get_db`, adapte cet import (c'est le seul point de couplage a verifier).
-"""
+
 from flask import Blueprint, jsonify, request
 from app.database import get_db
 
