@@ -46,7 +46,7 @@ SCENARIOS = [
     ("A. Factuel", "Quel est le panier moyen ?", None, None,
      "Doit donner une valeur cohérente (~160 R$)."),
 
-    # --- B. Mémoire conversationnelle (le point qu'on vient de corriger) ---
+    # --- B. Mémoire conversationnelle --
     ("B. Mémoire", "que signifie ce chiffre ?",
      [{"role": "user", "content": "Quel est le chiffre d'affaires total ?"},
       {"role": "assistant", "content": "Le chiffre d'affaires total est de 16 008 872,12 R$ sur 99 441 commandes."}],
